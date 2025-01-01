@@ -29,12 +29,12 @@ namespace ray {
 namespace gcs {
 
 //////////////////////////////////////////////////////////////////////////////////////////
-GcsNodeManager::GcsNodeManager(std::shared_ptr<GcsPublisher> gcs_publisher,
-                               std::shared_ptr<gcs::GcsTableStorage> gcs_table_storage,
+GcsNodeManager::GcsNodeManager(GcsPublisher *gcs_publisher,
+                               gcs::GcsTableStorage *gcs_table_storage,
                                rpc::NodeManagerClientPool *raylet_client_pool,
                                const ClusterID &cluster_id)
-    : gcs_publisher_(std::move(gcs_publisher)),
-      gcs_table_storage_(std::move(gcs_table_storage)),
+    : gcs_publisher_(gcs_publisher),
+      gcs_table_storage_(gcs_table_storage),
       raylet_client_pool_(raylet_client_pool),
       cluster_id_(cluster_id) {}
 
@@ -458,17 +458,18 @@ void GcsNodeManager::Initialize(const GcsInitData &gcs_init_data) {
       sorted_dead_node_list_.emplace_back(node_id, node_info.end_time_ms());
     }
   }
-  sorted_dead_node_list_.sort(
-      [](const std::pair<NodeID, int64_t> &left,
-         const std::pair<NodeID, int64_t> &right) { return left.second < right.second; });
+  std::sort(
+      sorted_dead_node_list_.begin(),
+      sorted_dead_node_list_.end(),
+      [](const auto &left, const auto &right) { return left.second < right.second; });
 }
 
 void GcsNodeManager::AddDeadNodeToCache(std::shared_ptr<rpc::GcsNodeInfo> node) {
   if (dead_nodes_.size() >= RayConfig::instance().maximum_gcs_dead_node_cached_count()) {
-    const auto &node_id = sorted_dead_node_list_.begin()->first;
+    const auto &node_id = sorted_dead_node_list_.front().first;
     RAY_CHECK_OK(gcs_table_storage_->NodeTable().Delete(node_id, nullptr));
-    dead_nodes_.erase(sorted_dead_node_list_.begin()->first);
-    sorted_dead_node_list_.erase(sorted_dead_node_list_.begin());
+    dead_nodes_.erase(sorted_dead_node_list_.front().first);
+    sorted_dead_node_list_.pop_front();
   }
   auto node_id = NodeID::FromBinary(node->node_id());
   dead_nodes_.emplace(node_id, node);

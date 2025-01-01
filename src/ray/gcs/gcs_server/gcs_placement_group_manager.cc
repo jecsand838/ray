@@ -182,14 +182,18 @@ rpc::PlacementGroupStats *GcsPlacementGroup::GetMutableStats() {
 /////////////////////////////////////////////////////////////////////////////////////////
 
 GcsPlacementGroupManager::GcsPlacementGroupManager(
+    instrumented_io_context &io_context, GcsResourceManager &gcs_resource_manager)
+    : io_context_(io_context), gcs_resource_manager_(gcs_resource_manager) {}
+
+GcsPlacementGroupManager::GcsPlacementGroupManager(
     instrumented_io_context &io_context,
     GcsPlacementGroupSchedulerInterface *scheduler,
-    std::shared_ptr<gcs::GcsTableStorage> gcs_table_storage,
+    gcs::GcsTableStorage *gcs_table_storage,
     GcsResourceManager &gcs_resource_manager,
     std::function<std::string(const JobID &)> get_ray_namespace)
     : io_context_(io_context),
       gcs_placement_group_scheduler_(scheduler),
-      gcs_table_storage_(std::move(gcs_table_storage)),
+      gcs_table_storage_(gcs_table_storage),
       gcs_resource_manager_(gcs_resource_manager),
       get_ray_namespace_(std::move(get_ray_namespace)) {
   placement_group_state_counter_.reset(
@@ -204,10 +208,6 @@ GcsPlacementGroupManager::GcsPlacementGroupManager(
       });
   Tick();
 }
-
-GcsPlacementGroupManager::GcsPlacementGroupManager(
-    instrumented_io_context &io_context, GcsResourceManager &gcs_resource_manager)
-    : io_context_(io_context), gcs_resource_manager_(gcs_resource_manager) {}
 
 void GcsPlacementGroupManager::RegisterPlacementGroup(
     const std::shared_ptr<GcsPlacementGroup> &placement_group, StatusCallback callback) {
@@ -593,7 +593,7 @@ void GcsPlacementGroupManager::HandleGetPlacementGroup(
     }
     RAY_LOG(DEBUG) << "Finished getting placement group info, placement group id = "
                    << placement_group_id;
-    GCS_RPC_SEND_REPLY(send_reply_callback, reply, Status::OK());
+    GCS_RPC_SEND_REPLY(send_reply_callback, reply, status);
   };
 
   auto it = registered_placement_groups_.find(placement_group_id);
@@ -715,6 +715,10 @@ void GcsPlacementGroupManager::WaitPlacementGroup(
     auto on_done = [this, placement_group_id, callback](
                        const Status &status,
                        const std::optional<PlacementGroupTableData> &result) {
+      if (!status.ok()) {
+        callback(status);
+        return;
+      }
       if (result) {
         RAY_LOG(DEBUG) << "Placement group is removed, placement group id = "
                        << placement_group_id;

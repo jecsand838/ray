@@ -2,13 +2,13 @@ import re
 
 import numpy as np
 
-from ray.rllib.algorithms.callbacks import DefaultCallbacks
+from ray.rllib.callbacks.callbacks import RLlibCallback
 from ray.rllib.utils.deprecation import Deprecated
 from ray.rllib.utils.metrics import ENV_RUNNER_RESULTS
 
 
 @Deprecated(help="Use the example for the new RLlib API stack", error=False)
-class SelfPlayLeagueBasedCallbackOldAPIStack(DefaultCallbacks):
+class SelfPlayLeagueBasedCallbackOldAPIStack(RLlibCallback):
     def __init__(self, win_rate_threshold):
         super().__init__()
         # All policies in the league.
@@ -167,13 +167,17 @@ class SelfPlayLeagueBasedCallbackOldAPIStack(DefaultCallbacks):
 
                     algorithm.env_runner_group.foreach_worker(_set)
                 else:
+                    base_pol = algorithm.get_policy(policy_id)
                     new_policy = algorithm.add_policy(
                         policy_id=new_pol_id,
-                        policy_cls=type(algorithm.get_policy(policy_id)),
+                        policy_cls=type(base_pol),
                         policy_mapping_fn=policy_mapping_fn,
                         policies_to_train=self.trainable_policies,
+                        config=base_pol.config,
+                        observation_space=base_pol.observation_space,
+                        action_space=base_pol.action_space,
                     )
-                    main_state = algorithm.get_policy(policy_id).get_state()
+                    main_state = base_pol.get_state()
                     new_policy.set_state(main_state)
                     # We need to sync the just copied local weights to all the
                     # remote workers as well.
